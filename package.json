@@ -1,0 +1,31 @@
+{
+  "name": "scrub-secrets",
+  "version": "1.0.0",
+  "description": "Redact API keys, tokens, JWTs, private keys, passwords and card numbers from strings and objects before they reach your logs. Zero dependencies, with a CLI for pipes.",
+  "keywords": ["redact", "secrets", "scrub", "sanitize", "logging", "security", "pii", "tokens", "api-key", "jwt", "mask", "cli"],
+  "license": "MIT",
+  "author": "Amir Shahzad Hashmi",
+  "repository": { "type": "git", "url": "git+https://github.com/amirshahzadhashmi7145/scrub-secrets.git" },
+  "bugs": { "url": "https://github.com/amirshahzadhashmi7145/scrub-secrets/issues" },
+  "homepage": "https://github.com/amirshahzadhashmi7145/scrub-secrets#readme",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
+      "require": { "types": "./dist/index.d.cts", "default": "./dist/index.cjs" }
+    }
+  },
+  "bin": { "scrub-secrets": "dist/cli.js" },
+  "files": ["dist", "README.md", "LICENSE"],
+  "engines": { "node": ">=18" },
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsup",
+    "test": "tsc --noEmit && node --test test/*.test.mjs",
+    "prepublishOnly": "npm run build && npm test"
+  },
+  "devDependencies": { "@types/node": "^22.0.0", "tsup": "^8.3.0", "typescript": "^5.6.0" }
+}
