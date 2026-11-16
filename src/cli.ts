@@ -51,7 +51,44 @@ function readStdin(): string {
   }
 }
 
-function main(): void {
+/** Longest run of text held back while waiting for a newline or the end of a private key block. */
+const MAX_HOLD = 64 * 1024;
+
+/**
+ * Scrub stdin as it arrives, so live streams such as `tail -f app.log | scrub-secrets` produce output
+ * line by line. Only complete lines are scrubbed, and an unfinished private key block is held until
+ * its END line, so no secret is split across two writes.
+ */
+async function streamStdin(options: ScrubOptions): Promise<void> {
+  const write = (text: string): Promise<void> =>
+    new Promise((done) => {
+      if (text === "" || process.stdout.write(text)) done();
+      else process.stdout.once("drain", () => done());
+    });
+  process.stdout.on("error", (e: NodeJS.ErrnoException) => {
+    if (e.code === "EPIPE") process.exit(0); // the reader went away, e.g. `| head`
+    throw e;
+  });
+
+  let pending = "";
+  process.stdin.setEncoding("utf8");
+  for await (const chunk of process.stdin) {
+    pending += chunk as string;
+    let cut = pending.lastIndexOf("\n") + 1;
+    if (cut === 0 && pending.length >= MAX_HOLD) cut = pending.length; // a very long line: stop waiting
+    const begin = pending.lastIndexOf("-----BEGIN ", cut);
+    if (begin !== -1 && pending.length - begin < MAX_HOLD) {
+      const end = pending.indexOf("-----END ", begin);
+      if (end === -1 || end >= cut) cut = begin;
+    }
+    if (cut === 0) continue;
+    await write(scrub(pending.slice(0, cut), options));
+    pending = pending.slice(cut);
+  }
+  await write(scrub(pending, options));
+}
+
+async function main(): Promise<void> {
   const argv = process.argv.slice(2);
   const options: ScrubOptions = {};
   const files: string[] = [];
@@ -94,8 +131,14 @@ function main(): void {
     if (!known.has(t)) fail(`Unknown detector "${t}". Run --list to see them.`);
   }
 
+  const fromStdin = files.length === 0 || (files.length === 1 && files[0] === "-");
+  if (fromStdin && !json && !check) {
+    await streamStdin(options);
+    return;
+  }
+
   let text: string;
-  if (files.length === 0 || (files.length === 1 && files[0] === "-")) {
+  if (fromStdin) {
     text = readStdin();
   } else {
     try {
@@ -131,4 +174,7 @@ function main(): void {
   process.stdout.write(json ? `${JSON.stringify(out, null, 2)}\n` : (out as string));
 }
 
-main();
+main().catch((e) => {
+  process.stderr.write(`scrub-secrets: ${(e as Error).message}\n`);
+  process.exit(2);
+});

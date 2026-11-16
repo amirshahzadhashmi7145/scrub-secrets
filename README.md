@@ -154,6 +154,9 @@ scrub-secrets [options] [file...]
 # Pipe anything through it
 docker logs api 2>&1 | npx scrub-secrets
 
+# Follow a live log; output is written line by line
+tail -f app.log | scrub-secrets
+
 # Scrub a file before attaching it to a ticket
 npx scrub-secrets app.log > app.scrubbed.log
 

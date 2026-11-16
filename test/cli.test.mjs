@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -63,4 +63,34 @@ test("--list, --help, --version, unknown option", () => {
   assert.equal(run(["--help"]).code, 0);
   assert.match(run(["-v"]).out, /^\d+\.\d+\.\d+\n$/);
   assert.equal(run(["--wat"]).code, 2);
+});
+
+test("streams stdin: a finished line is written before stdin closes", async () => {
+  const child = spawn(process.execPath, [CLI], { stdio: ["pipe", "pipe", "inherit"] });
+  child.stdout.setEncoding("utf8");
+  const firstChunk = new Promise((done) => child.stdout.once("data", done));
+  child.stdin.write("password=abc\npartial ");
+  assert.equal(await firstChunk, "password=[REDACTED]\n"); // stdin is still open here
+  let rest = "";
+  child.stdout.on("data", (d) => (rest += d));
+  child.stdin.end(`line ${F.AWS_ID}`);
+  const code = await new Promise((done) => child.on("close", done));
+  assert.equal(code, 0);
+  assert.equal(rest, "partial line [REDACTED]");
+});
+
+test("streaming holds a private key block until its END line", async () => {
+  const child = spawn(process.execPath, [CLI, "--tag"], { stdio: ["pipe", "pipe", "inherit"] });
+  child.stdout.setEncoding("utf8");
+  let out = "";
+  child.stdout.on("data", (d) => (out += d));
+  const dashes = "-".repeat(5);
+  const parts = ["before\n", `${dashes}BEGIN RSA PRIVATE KEY${dashes}\nMIIEabc\n`, "def123\n", `${dashes}END RSA PRIVATE KEY${dashes}\nafter\n`];
+  for (const p of parts) {
+    child.stdin.write(p);
+    await new Promise((r) => setTimeout(r, 40));
+  }
+  child.stdin.end();
+  await new Promise((done) => child.on("close", done));
+  assert.equal(out, "before\n[REDACTED:private-key]\nafter\n");
 });
